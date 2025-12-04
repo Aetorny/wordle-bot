@@ -45,7 +45,7 @@ class UI:
         if idx != self.words_len and (idx == 0 or word in self.words_starts[idx]):
             for l, s in self.letters_place[idx]:
                 check = self.letters_must_place[idx] is not None and self.letters_must_place[idx] != l
-                if (not self.reverse_construct and check) or (self.reverse_construct and not check): continue
+                if not self.reverse_construct and check: continue
                 if not self.reverse_construct and l in self.in_place_not_letter[idx]: continue
                 if l in self.dont_use_letters: continue
                 yield from self.construct_word(word + l, score + s, idx + 1)
@@ -64,7 +64,7 @@ class UI:
             words.append((word, score))
         
         new_words: list[tuple[str, float]] = []
-        if len(self.must_be_letters) > 0 and len(words) > 10:
+        if len(self.must_be_letters) > 0 and len(words) > 1:
             self.letters_place = analyze_words(self.initial_words, self.words_len)
             temp = self.words_starts
             self.words_starts = self.initial_words_starts
@@ -78,7 +78,6 @@ class UI:
                     score //= 2
                 sum_ += score
                 new_words.append((word, score))
-
             self.words_starts = temp
             self.reverse_construct = False
             if len(new_words) == 0:
@@ -130,7 +129,7 @@ class UI:
         self.print_fisrt_words(possible_words)
 
         print('Далее напишите слово, которое вы выбрали. А затем под ним напишите результат под нужной буквой')
-        print('(r - серый/красный, буква не используется; y - жёлтый, буква используется, но не на этом месте); g - зелёный, буква используется и на этом месте)')
+        print('(r - серый, буква не используется; y - жёлтый, буква используется, но не на этом месте; g - зелёный, буква используется и на этом месте)')
 
         while True:
             word = ' '

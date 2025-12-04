@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Wordle Bot — Web UI</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div id="top">
+        <label>Длина слова: <select id="word_len" class="input">
+            <option value="4">4</option>
+            <option value="5" selected>5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+        </select></label>
+        <label>Язык: <select id="lang" class="input">
+            <option value="en">English</option>
+            <option value="ru">Русский</option>
+        </select></label>
+        <button id="new_game" class="btn">Новая игра</button>
+        <label style="margin-left:12px"><input type="checkbox" id="persist_checkbox"/> Удалить из банка навсегда</label>
+    </div>
+
+    <div id="container">
+        <div id="left">
+            <h3>Описание</h3>
+            <p>Этот бот помогает выбрать вероятные слова в игре Wordle. Выберите длину слова и язык, нажмите "Новая игра". Введите слово прямо в поля посередине, нажимая цифры 1/2/3 для назначения цвета букв, затем нажмите <strong>Enter</strong> или кнопку "Отправить" — бот выполнит анализ и предложит варианты.</p>
+            <p>Цвета:
+            <ul>
+                <li>Серый (1) — буква не используется (r)</li>
+                <li>Жёлтый (2) — буква используется, но не на этом месте (y)</li>
+                <li>Зелёный (3) — буква используется на этом месте (g)</li>
+            </ul>
+            </p>
+        </div>
+
+        <div id="center">
+            <div id="entered_history" class="entered-history"></div>
+            <div id="letters" tabindex="0" aria-label="Tiles">
+                <!-- Inputs will be created dynamically -->
+            </div>
+            <div id="controls">
+                <button id="submit" class="btn">Отправить</button>
+                <button id="clear" class="btn secondary">Очистить</button>
+            </div>
+        </div>
+
+        <div id="right">
+            <h3>Варианты</h3>
+            <div id="suggestions"></div>
+        </div>
+    </div>
+
+    <div id="bottom">
+        <div id="keymap">
+            <label>Кнопка для Серого: <input id="key_gray" class="input" type="text" value="1" maxlength="1"/></label>
+            <label>Кнопка для Жёлтого: <input id="key_yellow" class="input" type="text" value="2" maxlength="1"/></label>
+            <label>Кнопка для Зелёного: <input id="key_green" class="input" type="text" value="3" maxlength="1"/></label>
+            <small>Нажмите соответствующую цифру при выборе буквы, чтобы присвоить ей цвет.</small>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
