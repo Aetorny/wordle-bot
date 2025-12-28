@@ -1,334 +1,322 @@
-let wordLen = 5;
-let lang = 'en';
-let keyMap = { gray: '1', yellow: '2', green: '3' };
-let selectedIndex = 0;
-let statuses = [];
+// Состояние приложения
+const state = {
+    sessionId: null,
+    wordLen: 5,
+    lang: 'en',
+    wordsBank: [],
+    statuses: [], // Массив чисел: 1 (gray), 2 (yellow), 3 (green)
+    keyMap: { gray: '1', yellow: '2', green: '3' }
+};
 
-const lettersEl = document.getElementById('letters');
-const suggestionsEl = document.getElementById('suggestions');
+// DOM Элементы
+const els = {
+    letters: document.getElementById('letters'),
+    suggestions: document.getElementById('suggestions'),
+    history: document.getElementById('entered_history'),
+    loading: document.getElementById('loading_indicator'),
+    wordLen: document.getElementById('word_len'),
+    lang: document.getElementById('lang'),
+    persist: document.getElementById('persist_checkbox'),
+    keys: {
+        gray: document.getElementById('key_gray'),
+        yellow: document.getElementById('key_yellow'),
+        green: document.getElementById('key_green')
+    }
+};
 
+// --- API Helper ---
+async function apiCall(endpoint, method = 'GET', body = null) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (state.sessionId) {
+        headers['X-Session-ID'] = state.sessionId;
+    }
+    
+    try {
+        els.loading.classList.remove('hidden');
+        const options = { method, headers };
+        if (body) options.body = JSON.stringify(body);
+        
+        const res = await fetch(endpoint, options);
+        if (res.status === 401) {
+            showToast('Сессия истекла. Начинаем новую игру...', 'error');
+            return await initGame(); 
+        }
+        const data = await res.json();
+        return data;
+    } catch (e) {
+        showToast('Ошибка сети', 'error');
+        console.error(e);
+        return null;
+    } finally {
+        els.loading.classList.add('hidden');
+    }
+}
+
+// --- Инициализация ---
+async function initGame() {
+    // Сброс UI
+    state.wordLen = parseInt(els.wordLen.value);
+    state.lang = els.lang.value;
+    createTiles();
+    els.history.innerHTML = '';
+    
+    // Запрос к серверу
+    const data = await apiCall('/api/init', 'POST', {
+        words_len: state.wordLen, 
+        lang: state.lang
+    });
+
+    if (data && data.ok) {
+        state.sessionId = data.session_id; // ВАЖНО: Сохраняем ID сессии
+        renderSuggestions(data.words);
+        showToast('Новая игра начата', 'success');
+    } else {
+        showToast(data?.error || 'Ошибка инициализации', 'error');
+    }
+}
+
+// --- Логика Тайлов ---
 function createTiles() {
-    lettersEl.innerHTML = '';
-    statuses = Array(wordLen).fill(0); // 0=clear,1=gray,2=yellow,3=green
-    for (let i = 0; i < wordLen; i++) {
+    els.letters.innerHTML = '';
+    state.statuses = Array(state.wordLen).fill(0); // 0 = пусто/нет цвета
+    
+    for (let i = 0; i < state.wordLen; i++) {
         const div = document.createElement('div');
-        div.classList.add('letter', 'status-0');
+        div.className = 'tile status-0';
         div.dataset.idx = i;
+        
         const input = document.createElement('input');
         input.type = 'text';
         input.maxLength = 1;
         input.dataset.idx = i;
-        input.addEventListener('click', (e) => {
-            selectedIndex = i;
-            input.focus();
-        });
-        input.addEventListener('input', (e) => {
-            // accept only letters
-            const v = input.value;
-            input.value = v ? v[0].toLowerCase() : '';
-            // move cursor to next tile automatically
-            if (input.value && i < wordLen - 1) {
-                const next = lettersEl.querySelector(`[data-idx='${i+1}'] input`);
-                if (next) next.focus();
-            }
-            // if user entered the last letter – return focus to the first tile to start painting
-            if (input.value && i === wordLen - 1) {
-                const first = lettersEl.querySelector("[data-idx='0'] input");
-                if (first) { first.focus(); selectedIndex = 0; }
-            }
-        });
-        input.addEventListener('keydown', (e) => onTileKeydown(e, i));
+        
+        // События
+        input.addEventListener('click', () => input.select());
+        input.addEventListener('input', (e) => handleInput(e, i));
+        input.addEventListener('keydown', (e) => handleKeydown(e, i));
+        
         div.appendChild(input);
-        lettersEl.appendChild(div);
+        els.letters.appendChild(div);
     }
-    updateTiles();
-    const first = lettersEl.querySelector("[data-idx='0'] input");
-    if (first) first.focus();
-    syncEnteredHistoryWidth();
-    // after tiles are created, ensure history scroll is at bottom so the latest entry sits closest to tiles
-    const ent = document.getElementById('entered_history');
-    if (ent) ent.scrollTop = ent.scrollHeight;
+    
+    // Фокус на первое поле
+    setTimeout(() => els.letters.querySelector('input')?.focus(), 50);
 }
 
-function syncEnteredHistoryWidth(){
-    const entered = document.getElementById('entered_history');
-    const letters = document.getElementById('letters');
-    if (!entered || !letters) return;
-    // set exact width to match the letters container so rows are centered above the tiles
-    const w = letters.offsetWidth;
-    entered.style.width = w + 'px';
-}
-
-function cycleStatus(i, value=null) {
-    if (value === null) {
-        statuses[i] = (statuses[i] + 1) % 4;
-    } else {
-        statuses[i] = value;
-    }
-    updateTiles();
-}
-
-function updateTiles(){
-    for (let i=0;i<wordLen;i++){
-        const container = lettersEl.querySelector(`[data-idx='${i}']`);
-        const tile = container.querySelector('input');
-        container.className = 'letter status-' + statuses[i];
-    }
-}
-
-// Ensure global number key mapping when focus is not inside a tile
-window.addEventListener('keydown', (e) => {
-    const key = e.key;
-    if (key === 'Tab') return;
-    if (key >= '0' && key <= '9') {
-        const active = document.activeElement;
-        if (active && (active.tagName.toLowerCase() === 'input' && active.parentElement && active.parentElement.classList.contains('letter'))) {
-            // let the input's handler do the work
-            return;
-        }
-        const mapVal = Object.entries(keyMap).find(([k,v]) => v === key);
-        if (!mapVal) return;
-        const status = mapVal[0] === 'gray' ? 1 : mapVal[0] === 'yellow' ? 2 : 3; // 3 -> green
-        cycleStatus(selectedIndex, status);
-        // move to next tile
-        if (selectedIndex < wordLen - 1) {
-            const next = lettersEl.querySelector(`[data-idx='${selectedIndex+1}'] input`);
-            if (next) { next.focus(); selectedIndex = selectedIndex + 1; }
-        } else {
-            // If we are at the last tile, wrap to the first tile so user can begin coloring
-            const first = lettersEl.querySelector("[data-idx='0'] input");
-            if (first) { first.focus(); selectedIndex = 0; }
-        }
-        e.preventDefault();
-    }
-});
-
-// keyboard mapping
-function onTileKeydown(e, idx){
-    const key = e.key;
-    if (key === 'Enter') {
-        submitGuess();
-        e.preventDefault();
+function handleInput(e, idx) {
+    const input = e.target;
+    const val = input.value;
+    
+    // Оставляем только буквы
+    if (!val.match(/^[a-zA-Zа-яА-ЯёЁ]$/)) {
+        input.value = '';
         return;
     }
+    
+    // Авто-переход к следующему
+    if (idx < state.wordLen - 1) {
+        const next = els.letters.querySelector(`input[data-idx="${idx + 1}"]`);
+        next.focus();
+    }
+}
+
+function handleKeydown(e, idx) {
+    const key = e.key;
+    const input = e.target;
+
+    // Навигация Backspace
     if (key === 'Backspace') {
-        const input = e.target;
         if (input.value === '' && idx > 0) {
-            const prev = lettersEl.querySelector(`[data-idx='${idx-1}'] input`);
-            if (prev) { prev.focus(); prev.value = ''; }
-        }
-        setTimeout(() => updateTiles(), 0);
-        return;
-    }
-    if (key === 'ArrowLeft' && idx > 0) {
-        const prev = lettersEl.querySelector(`[data-idx='${idx-1}'] input`);
-        if (prev) prev.focus();
-        e.preventDefault();
-        return;
-    }
-    if (key === 'ArrowRight' && idx < wordLen - 1) {
-        const next = lettersEl.querySelector(`[data-idx='${idx+1}'] input`);
-        if (next) next.focus();
-        e.preventDefault();
-        return;
-    }
-
-    // map numbers to statuses
-    if (key >= '0' && key <= '9') {
-        const mapVal = Object.entries(keyMap).find(([k,v]) => v === key);
-        if (!mapVal) return;
-        const status = mapVal[0] === 'gray' ? 1 : mapVal[0] === 'yellow' ? 2 : 3;
-        cycleStatus(idx, status);
-        // if user colored tile while focused, move to next tile, or wrap to first if at last
-        if (idx < wordLen - 1) {
-            const next = lettersEl.querySelector(`[data-idx='${idx+1}'] input`);
-            if (next) { next.focus(); selectedIndex = idx + 1; }
+            e.preventDefault();
+            const prev = els.letters.querySelector(`input[data-idx="${idx - 1}"]`);
+            prev.focus();
+            prev.value = ''; // Удаляем букву в предыдущем
+            // Сбрасываем статус
+            updateStatus(idx - 1, 0); 
         } else {
-            const first = lettersEl.querySelector("[data-idx='0'] input");
-            if (first) { first.focus(); selectedIndex = 0; }
+            // Если есть буква, она удалится сама, мы просто сбрасываем статус
+            updateStatus(idx, 0);
         }
+    }
+    
+    // Навигация стрелками
+    if (key === 'ArrowLeft' && idx > 0) els.letters.querySelector(`input[data-idx="${idx - 1}"]`).focus();
+    if (key === 'ArrowRight' && idx < state.wordLen - 1) els.letters.querySelector(`input[data-idx="${idx + 1}"]`).focus();
+    
+    // Enter
+    if (key === 'Enter') submitGuess();
+
+    // Цвета по цифрам
+    if (['1', '2', '3'].includes(key)) {
         e.preventDefault();
+        // Маппинг клавиши на статус (вдруг пользователь переназначил)
+        // Но здесь мы используем прямую логику: нажал 1 -> серый
+        const statusMap = { [state.keyMap.gray]: 1, [state.keyMap.yellow]: 2, [state.keyMap.green]: 3 };
+        const s = statusMap[key];
+        
+        if (s) {
+            updateStatus(idx, s);
+            // Авто-переход если есть буква
+            if (input.value && idx < state.wordLen - 1) {
+                els.letters.querySelector(`input[data-idx="${idx + 1}"]`).focus();
+            }
+        }
+    }
+}
+
+function updateStatus(idx, status) {
+    state.statuses[idx] = status;
+    const div = els.letters.querySelector(`div[data-idx="${idx}"]`);
+    div.className = `tile status-${status}`;
+}
+
+// Глобальный перехват нажатий для раскраски, если фокус не в инпуте
+window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    
+    // Проверяем, какой инпут был последним активным или берем первый
+    // В данной реализации упростим: работаем только если пользователь кликает на тайлы
+});
+
+// --- Сабмит ---
+async function submitGuess() {
+    const inputs = Array.from(els.letters.querySelectorAll('input'));
+    const word = inputs.map(i => i.value).join('').toLowerCase();
+
+    // Валидация
+    if (word.length !== state.wordLen) {
+        return showToast(`Введите слово из ${state.wordLen} букв`, 'error');
+    }
+    
+    // Проверка заполненности статусов (0 запрещен для заполненных букв)
+    // Но логика игры Wordle: ты вводишь слово, нажимаешь Enter, потом красишь? 
+    // Или красишь сразу? В твоем коде - красишь сразу.
+    if (state.statuses.some(s => s === 0)) {
+        return showToast('Раскрасьте все буквы (клавиши 1, 2, 3)', 'error');
+    }
+
+    const data = await apiCall('/api/guess', 'POST', {
+        word: word,
+        statuses: state.statuses
+    });
+
+    if (data && data.ok) {
+        addToHistory(word, state.statuses);
+        renderSuggestions(data.words);
+        clearInputs();
+    } else {
+        showToast(data?.error || 'Ошибка', 'error');
+    }
+}
+
+function addToHistory(word, statuses) {
+    const row = document.createElement('div');
+    row.className = 'history-row';
+    
+    for (let i = 0; i < state.wordLen; i++) {
+        const tile = document.createElement('div');
+        tile.className = `history-tile status-${statuses[i]}`;
+        tile.textContent = word[i];
+        row.appendChild(tile);
+    }
+    
+    els.history.appendChild(row);
+    els.history.scrollTop = els.history.scrollHeight;
+}
+
+function clearInputs() {
+    const inputs = els.letters.querySelectorAll('input');
+    inputs.forEach(inp => inp.value = '');
+    state.statuses.fill(0);
+    inputs.forEach((_, i) => updateStatus(i, 0));
+    inputs[0].focus();
+}
+
+// --- Предложения (Suggestions) ---
+function renderSuggestions(words) {
+    els.suggestions.innerHTML = '';
+    if (!words || words.length === 0) {
+        els.suggestions.innerHTML = '<div style="color:var(--text-muted); padding:10px">Нет вариантов</div>';
         return;
     }
-}
 
-lettersEl.addEventListener('click', (e) => {
-    const target = e.target.closest('.letter');
-    if (!target) return;
-    selectedIndex = parseInt(target.dataset.idx);
-    const input = target.querySelector('input');
-    if (input) input.focus();
-});
-
-// Suggestion rendering
-function renderSuggestions(words){
-    suggestionsEl.innerHTML = '';
-    for (let i=0;i<words.length;i++){
-        const [w, p] = words[i];
-        const div = document.createElement('div');
-        div.className = 'suggestion';
+    words.forEach(([w, prob]) => {
+        const item = document.createElement('div');
+        item.className = 'suggestion-item';
+        
         const left = document.createElement('div');
-        left.className = 'left';
-        left.style.cursor = 'pointer';
-        left.setAttribute('role', 'button');
-        left.setAttribute('tabindex', '0');
-        const wordSpan = document.createElement('span');
-        wordSpan.className = 'word';
-        wordSpan.textContent = w;
-        left.appendChild(wordSpan);
-        left.addEventListener('click', () => {
-            // fill tiles with clicked word
-            for (let i=0;i<wordLen;i++){
-                const a = lettersEl.querySelector(`[data-idx='${i}'] input`);
-                if (a) a.value = w[i] || '';
-            }
-            statuses = Array(wordLen).fill(0);
-            updateTiles();
-            const first = lettersEl.querySelector("[data-idx='0'] input");
-            if (first) first.focus();
-        });
-        left.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                left.click();
-            }
-        });
+        left.innerHTML = `<span class="s-word">${w}</span>`;
+        left.onclick = () => fillWord(w);
+        
         const right = document.createElement('div');
-        const prob = document.createElement('span');
-        prob.className = 'prob';
-        prob.textContent = p + '%';
-        right.appendChild(prob);
-        const btn = document.createElement('button');
-        btn.className = 'danger';
-        btn.textContent = 'X';
-        btn.addEventListener('click', () => {
-            const persist = document.getElementById('persist_checkbox')?.checked;
-            if (persist) {
-                if (!confirm(`Удалить слово '${w}' из банка навсегда?`)) return;
-            }
-            excludeWord(w, persist);
+        right.style.display = 'flex';
+        right.style.alignItems = 'center';
+        
+        right.innerHTML = `
+            <span class="s-prob">${prob}%</span>
+            <button class="btn-del" title="Исключить">✕</button>
+        `;
+        
+        right.querySelector('button').addEventListener('click', (e) => {
+            e.stopPropagation();
+            excludeWord(w);
         });
-        right.appendChild(btn);
-        div.appendChild(left);
-        div.appendChild(right);
-        suggestionsEl.appendChild(div);
-    }
-}
 
-// API calls
-async function newGame(){
-    wordLen = parseInt(document.getElementById('word_len').value);
-    lang = document.getElementById('lang').value;
-    createTiles();
-    const res = await fetch('/api/init', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({words_len: wordLen, lang})
+        item.appendChild(left);
+        item.appendChild(right);
+        els.suggestions.appendChild(item);
     });
-    const json = await res.json();
-    if (json.ok){
-        renderSuggestions(json.words);
-            // clear entered history on new game
-            const entered = document.getElementById('entered_history');
-            if (entered) entered.innerHTML = '';
-    } else {
-        alert('Ошибка: ' + json.error);
+}
+
+function fillWord(word) {
+    const inputs = els.letters.querySelectorAll('input');
+    for (let i = 0; i < state.wordLen; i++) {
+        inputs[i].value = word[i] || '';
+        // Сброс цвета при вставке нового слова
+        updateStatus(i, 0); 
+    }
+    inputs[0].focus();
+}
+
+async function excludeWord(word) {
+    const persist = els.persist.checked;
+    if (persist && !confirm(`Удалить "${word}" из словаря НАВСЕГДА?`)) return;
+
+    const data = await apiCall('/api/exclude', 'POST', { word, persist });
+    if (data && data.ok) {
+        renderSuggestions(data.words);
+        showToast(`Слово "${word}" исключено`);
     }
 }
 
-async function refreshSuggestions(){
-    const res = await fetch('/api/analyze');
-    const json = await res.json();
-    if (json.ok) renderSuggestions(json.words);
+// --- Утилиты ---
+function showToast(msg, type = 'success') {
+    const cont = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = msg;
+    cont.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
 }
 
-async function submitGuess(){
-    // collect chars from tiles
-    let w = '';
-    for (let i=0;i<wordLen;i++){
-        const a = lettersEl.querySelector(`[data-idx='${i}'] input`);
-        w += (a && a.value) ? a.value.toLowerCase() : '';
-    }
-    if (w.length !== wordLen || w.includes(' ')) { alert('Длина слова должна быть ' + wordLen + ' и заполнены все буквы'); return; }
-    if (statuses.some(s => s === 0)) { alert('Пожалуйста, покрасьте все буквы цветом (1/2/3) перед отправкой.'); return; }
-    const res = await fetch('/api/guess', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({word:w, statuses: statuses})});
-    const json = await res.json();
-    if (json.ok){
-        renderSuggestions(json.words);
-        if (json.word) {
-            addGuessAboveInput(json.word, statuses, json.result);
-        }
-        // show result mapping returned by server if present (also included in history block)
-        // clear the tiles to allow new word input
-        for (let i=0;i<wordLen;i++){
-            const a = lettersEl.querySelector(`[data-idx='${i}'] input`);
-            if (a) a.value = '';
-        }
-        statuses = Array(wordLen).fill(0);
-        selectedIndex = 0;
-        updateTiles();
-        const first = lettersEl.querySelector("[data-idx='0'] input");
-        if (first) first.focus();
-    } else alert(json.error);
-}
+// --- Listeners ---
+els.newGameBtn = document.getElementById('new_game');
+els.submitBtn = document.getElementById('submit');
+els.clearBtn = document.getElementById('clear');
 
-// Removed: addGuessToHistory - we no longer show entered words on right-side.
+els.newGameBtn.addEventListener('click', initGame);
+els.submitBtn.addEventListener('click', submitGuess);
+els.clearBtn.addEventListener('click', clearInputs);
+els.wordLen.addEventListener('change', () => initGame()); // Смена длины = новая игра
 
-function addGuessAboveInput(word, statuses, result){
-    const container = document.getElementById('entered_history');
-    if (!container) return;
-    syncEnteredHistoryWidth();
-    const row = document.createElement('div');
-    row.className = 'entered-guess-row';
-    for (let i=0;i<wordLen;i++){
-        const letter = document.createElement('div');
-        const s = statuses[i] || 0;
-        letter.className = 'entered-guess-letter status-' + s;
-        letter.textContent = (word[i] || '').toUpperCase();
-        row.appendChild(letter);
-    }
-    // Do not show textual 'ryg' result; colors convey status
-    container.appendChild(row);
-    // Keep scroll pinned to bottom so the newest entries are visible directly above the tiles
-    container.scrollTop = container.scrollHeight;
-}
-
-async function excludeWord(word, persist=false){
-    const res = await fetch('/api/exclude', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({word, persist})});
-    const json = await res.json();
-    if (json.ok) renderSuggestions(json.words);
-}
-
-// Buttons
-document.getElementById('new_game').addEventListener('click', newGame);
-document.getElementById('word_len').addEventListener('change', (e) => {
-    wordLen = parseInt(e.target.value);
-    createTiles();
-});
-document.getElementById('submit').addEventListener('click', submitGuess);
-document.getElementById('clear').addEventListener('click', () => {
-    for (let i=0;i<wordLen;i++){
-        const a = lettersEl.querySelector(`[data-idx='${i}'] input`);
-        if (a) a.value = '';
-    }
-    statuses = Array(wordLen).fill(0);
-    updateTiles();
-    const first = lettersEl.querySelector("[data-idx='0'] input");
-    if (first) first.focus();
+// Настройка кнопок
+['key_gray', 'key_yellow', 'key_green'].forEach(id => {
+    const inp = document.getElementById(id);
+    inp.addEventListener('input', (e) => {
+        const key = id.split('_')[1]; // gray/yellow/green
+        state.keyMap[key] = e.target.value;
+    });
 });
 
-// Keymap inputs
-function updateKeyMap(){
-    keyMap.gray = document.getElementById('key_gray').value || '1';
-    keyMap.yellow = document.getElementById('key_yellow').value || '2';
-    keyMap.green = document.getElementById('key_green').value || '3';
-}
-['key_gray','key_yellow','key_green'].forEach(id => {
-    document.getElementById(id).addEventListener('input', updateKeyMap);
-});
-
-// init on load
-createTiles();
-newGame();
-
-// keep the entered history in sync with letters width on resize
-window.addEventListener('resize', syncEnteredHistoryWidth);
+// Start
+initGame();
