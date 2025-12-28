@@ -46,7 +46,7 @@ class UI:
             for l, s in self.letters_place[idx]:
                 check = self.letters_must_place[idx] is not None and self.letters_must_place[idx] != l
                 if not self.reverse_construct and check: continue
-                if not self.reverse_construct and l in self.in_place_not_letter[idx]: continue
+                if l in self.in_place_not_letter[idx]: continue
                 if l in self.dont_use_letters: continue
                 yield from self.construct_word(word + l, score + s, idx + 1)
         else:
@@ -76,6 +76,7 @@ class UI:
                     continue
                 if len(set(word)) != self.words_len:
                     score //= 2
+                score *= len(words)
                 sum_ += score
                 new_words.append((word, score))
             self.words_starts = temp
