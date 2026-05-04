@@ -144,7 +144,7 @@ class UI:
                     break
             else:
                 temp_words.add(word)
-        if len(new_words) > 1 and len(temp_words) > 0:
+        if len(new_words) > 1 and len(temp_words) > 10:
             self.words = temp_words
             self.temp_deleted_words = new_words
         else:
