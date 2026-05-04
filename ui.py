@@ -8,6 +8,7 @@ class UI:
         self.words_len = words_len
 
         self.words: set[str]
+        self.temp_deleted_words: set[str] = set()
         self.initial_words: set[str]
         self.letters_place: list[list[tuple[str, int]]]
 
@@ -45,24 +46,18 @@ class UI:
     def construct_word(self, word: str = '', score: int = 0, idx: int = 0) -> Generator[tuple[str, int]]:
         if idx != self.words_len and (idx == 0 or word in self.words_starts[idx]):
             for l, s in self.letters_place[idx]:
-                check = self.letters_must_place[idx] is not None and self.letters_must_place[idx] != l
-                if not self.reverse_construct and check: continue
-                if l in self.in_place_not_letter[idx]: continue
-                if l in self.dont_use_letters: continue
                 yield from self.construct_word(word + l, score + s, idx + 1)
         else:
             yield (word, score)
 
     def analyze_next_word(self) -> list[tuple[str, float]]:
-        words: list[tuple[str, float]] = []
+        words: dict[str, float] = {}
         sum_ = 0
         for word, score in self.construct_word():
             if word not in self.words:
                 continue
-            # if len(set(word)) != self.words_len:
-            #     score //= 0.5
             sum_ += score
-            words.append((word, score))
+            words[word] = score
         
         new_words: list[tuple[str, float]] = []
         if len(self.must_be_letters) > 0 and len(words) > 1:
@@ -75,8 +70,6 @@ class UI:
             for word, score in self.construct_word():
                 if word not in self.words:
                     continue
-                # if len(set(word)) != self.words_len:
-                #     score //= 2
                 score *= len(words)
                 sum_ += score
                 new_words.append((word, score))
@@ -85,13 +78,14 @@ class UI:
             if len(new_words) == 0:
                 sum_ = temp_sum
             else:
-                words += new_words
+                for w, s in new_words:
+                    words[w] += s
                 sum_ += temp_sum
 
-        for i in range(len(words)):
-            words[i] = (words[i][0], round(words[i][1] / sum_ * 100, 5))
-        
-        return sorted(words, key=lambda x: x[1], reverse=True)
+        for word in words:
+            words[word] = round(words[word] / sum_ * 100, 5)
+
+        return sorted(words.items(), key=lambda x: x[1], reverse=True)
 
     def print_fisrt_words(self, words: list[tuple[str, float]], count: int = 10) -> None:
         print('\tСлово'.ljust(12) + ' | Вероятность')
@@ -107,6 +101,9 @@ class UI:
                 to_add = []
                 if all([r != 'y' for _, r in other_results]):
                     to_add = [j for j in range(self.words_len)]
+                    for j, r in other_results:
+                        if r == 'g':
+                            to_add.remove(j)
                 else:
                     to_add = [i] + [j for j, r in other_results if r == 'y']
                 for idx in to_add:
@@ -122,7 +119,9 @@ class UI:
                 if word[i] in self.dont_use_letters_place[i]:
                     self.dont_use_letters_place[i].discard(word[i])
 
+        removed_words: set[str] = set()
         new_words: set[str] = set()
+        self.words = self.words.union(self.temp_deleted_words)
         for word in self.words:
             for i in range(self.words_len):
                 if word[i] in self.dont_use_letters:
@@ -130,10 +129,26 @@ class UI:
                 if word[i] in self.dont_use_letters_place[i]:
                     break
             else:
-                if all([True if l in word else False for l in self.must_be_letters]):
+                if all([True if l in word else False for l in self.must_be_letters]) and \
+                    all([word[i] != l for i in range(self.words_len) for l in self.in_place_not_letter[i]]) and \
+                    all([word[i] == self.letters_must_place[i] if self.letters_must_place[i] is not None else True
+                         for i in range(self.words_len)]):
                     new_words.add(word)
+                else:
+                    removed_words.add(word)
 
-        self.words = new_words
+        temp_words: set[str] = set()
+        for word in removed_words:
+            for i in range(self.words_len):
+                if word[i] in self.must_be_letters:
+                    break
+            else:
+                temp_words.add(word)
+        if len(new_words) > 1 and len(temp_words) > 0:
+            self.words = temp_words
+            self.temp_deleted_words = new_words
+        else:
+            self.words = new_words
         self.letters_place = analyze_words(self.words, self.words_len)
         self.get_start_words()
 
