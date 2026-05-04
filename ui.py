@@ -15,6 +15,7 @@ class UI:
         self.in_place_not_letter: list[list[str]] = [[] for _ in range(self.words_len)]
         
         self.dont_use_letters: set[str] = set()
+        self.dont_use_letters_place: list[set[str]] = [set() for _ in range(self.words_len)]
         self.must_be_letters: set[str] = set()
 
         self.reverse_construct = False
@@ -58,8 +59,8 @@ class UI:
         for word, score in self.construct_word():
             if word not in self.words:
                 continue
-            if len(set(word)) != self.words_len:
-                score //= 2
+            # if len(set(word)) != self.words_len:
+            #     score //= 0.5
             sum_ += score
             words.append((word, score))
         
@@ -74,8 +75,8 @@ class UI:
             for word, score in self.construct_word():
                 if word not in self.words:
                     continue
-                if len(set(word)) != self.words_len:
-                    score //= 2
+                # if len(set(word)) != self.words_len:
+                #     score //= 2
                 score *= len(words)
                 sum_ += score
                 new_words.append((word, score))
@@ -101,9 +102,15 @@ class UI:
         for i in range(self.words_len):
             if result[i] == 'r' and word.count(word[i]) == 1:
                 self.dont_use_letters.add(word[i])
+            elif result[i] == 'r' and word.count(word[i]) > 1:
+                for j in range(self.words_len):
+                    if self.letters_must_place[j] == word[i]: continue
+                    self.dont_use_letters_place[j].add(word[i])
             elif result[i] == 'g':
                 self.must_be_letters.add(word[i])
                 self.letters_must_place[i] = word[i]
+                if word[i] in self.dont_use_letters_place[i]:
+                    self.dont_use_letters_place[i].discard(word[i])
             elif result[i] == 'y':
                 self.must_be_letters.add(word[i])
                 self.in_place_not_letter[i].append(word[i])
@@ -112,6 +119,8 @@ class UI:
         for word in self.words:
             for i in range(self.words_len):
                 if word[i] in self.dont_use_letters:
+                    break
+                if word[i] in self.dont_use_letters_place[i]:
                     break
             else:
                 if all([True if l in word else False for l in self.must_be_letters]):
