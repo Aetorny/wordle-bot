@@ -103,9 +103,14 @@ class UI:
             if result[i] == 'r' and word.count(word[i]) == 1:
                 self.dont_use_letters.add(word[i])
             elif result[i] == 'r' and word.count(word[i]) > 1:
-                for j in range(self.words_len):
-                    if self.letters_must_place[j] == word[i]: continue
-                    self.dont_use_letters_place[j].add(word[i])
+                other_results = [(j, result[j]) for j in range(self.words_len) if word[j] == word[i] and j != i]
+                to_add = []
+                if all([r != 'y' for _, r in other_results]):
+                    to_add = [j for j in range(self.words_len)]
+                else:
+                    to_add = [i] + [j for j, r in other_results if r == 'y']
+                for idx in to_add:
+                    self.dont_use_letters_place[idx].add(word[i])
             elif result[i] == 'g':
                 self.must_be_letters.add(word[i])
                 self.letters_must_place[i] = word[i]
@@ -114,6 +119,8 @@ class UI:
             elif result[i] == 'y':
                 self.must_be_letters.add(word[i])
                 self.in_place_not_letter[i].append(word[i])
+                if word[i] in self.dont_use_letters_place[i]:
+                    self.dont_use_letters_place[i].discard(word[i])
 
         new_words: set[str] = set()
         for word in self.words:
